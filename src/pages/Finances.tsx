@@ -1,80 +1,189 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Download, CreditCard, DollarSign, PieChart, TrendingUp, Check } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
-// Mock financial data
-const financialSummary = {
-  totalFees: 15000,
-  paidAmount: 4650,
-  pendingAmount: 10350,
-  nextPaymentDate: new Date('2025-08-01'),
-  nextPaymentAmount: 5000,
+// Types for financial data
+type StudentFee = {
+  id: number;
+  student_id: number;
+  fee_type: string;
+  amount: number;
+  due_date: string | null;
+  academic_session_id: number | null;
+  is_mandatory: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
-const paymentHistory = [
-  {
-    id: 'pay-001',
-    description: 'Tuition Fee - Semester 1',
-    amount: 4500,
-    date: new Date('2025-02-01'),
-    status: 'Paid',
-    receiptAvailable: true,
-    method: 'Credit Card'
-  },
-  {
-    id: 'pay-002',
-    description: 'Application Fee',
-    amount: 150,
-    date: new Date('2024-12-15'),
-    status: 'Paid',
-    receiptAvailable: true,
-    method: 'Bank Transfer'
-  }
-];
+type StudentPayment = {
+  id: number;
+  student_id: number;
+  fee_id: number | null;
+  amount: number;
+  payment_date: string;
+  payment_method: string;
+  transaction_id: string | null;
+  status: string | null;
+  description: string | null;
+  receipt_url: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
 
-const upcomingPayments = [
-  {
-    id: 'up-001',
-    description: 'Tuition Fee - Semester 2',
-    amount: 5000,
-    dueDate: new Date('2025-08-01'),
-    status: 'Pending'
-  },
-  {
-    id: 'up-002',
-    description: 'Technology Fee',
-    amount: 350,
-    dueDate: new Date('2025-09-15'),
-    status: 'Pending'
-  },
-  {
-    id: 'up-003',
-    description: 'Library & Resources',
-    amount: 200,
-    dueDate: new Date('2025-09-15'),
-    status: 'Pending'
-  },
-  {
-    id: 'up-004',
-    description: 'Student Services',
-    amount: 300,
-    dueDate: new Date('2025-09-15'),
-    status: 'Pending'
-  },
-];
-
-// Fee structure
-const feeStructure = {
-  tuition: 9500,
-  technology: 350,
-  library: 200,
-  studentServices: 300,
-  accommodation: 4500,
-  insurance: 150,
+type FeeStructure = {
+  tuition: number;
+  technology: number;
+  library: number;
+  studentServices: number;
+  accommodation: number;
+  insurance: number;
 };
 
 const Finances = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+  const [studentFees, setStudentFees] = useState<StudentFee[]>([]);
+  const [studentPayments, setStudentPayments] = useState<StudentPayment[]>([]);
+  const [financialSummary, setFinancialSummary] = useState({
+    totalFees: 0,
+    paidAmount: 0,
+    pendingAmount: 0,
+    nextPaymentDate: new Date('2025-08-01'),
+    nextPaymentAmount: 0,
+  });
+
+  // Mock fee structure - in production this would come from database
+  const feeStructure: FeeStructure = {
+    tuition: 9500,
+    technology: 350,
+    library: 200,
+    studentServices: 300,
+    accommodation: 4500,
+    insurance: 150,
+  };
+
+  // Fetch financial data
+  useEffect(() => {
+    const fetchFinancialData = async () => {
+      if (!user?.id) return;
+
+      try {
+        setLoading(true);
+        const studentId = parseInt(user.id);
+
+        // Fetch student fees and payments in parallel
+        const [feesResult, paymentsResult] = await Promise.allSettled([
+          supabase
+            .from('student_fees')
+            .select('*')
+            .eq('student_id', studentId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('student_payments')
+            .select('*')
+            .eq('student_id', studentId)
+            .order('payment_date', { ascending: false })
+        ]);
+
+        // Handle fees data
+        if (feesResult.status === 'fulfilled') {
+          const { data: feesData, error: feesError } = feesResult.value;
+          if (feesError) {
+            console.error('Error fetching fees:', feesError);
+          } else {
+            setStudentFees(feesData || []);
+          }
+        }
+
+        // Handle payments data
+        if (paymentsResult.status === 'fulfilled') {
+          const { data: paymentsData, error: paymentsError } = paymentsResult.value;
+          if (paymentsError) {
+            console.error('Error fetching payments:', paymentsError);
+          } else {
+            setStudentPayments(paymentsData || []);
+          }
+        }
+
+      } catch (error) {
+        console.error('Error fetching financial data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFinancialData();
+  }, [user?.id]);
+
+  // Calculate financial summary
+  useEffect(() => {
+    const totalFees = studentFees.reduce((sum, fee) => sum + fee.amount, 0);
+    const paidAmount = studentPayments
+      .filter(payment => payment.status === 'completed')
+      .reduce((sum, payment) => sum + payment.amount, 0);
+    
+    // Find next payment (earliest unpaid fee)
+    const unpaidFees = studentFees.filter(fee => {
+      const paidForThisFee = studentPayments
+        .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
+        .reduce((sum, payment) => sum + payment.amount, 0);
+      return paidForThisFee < fee.amount;
+    });
+
+    const nextFee = unpaidFees.sort((a, b) => {
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      return dateA - dateB;
+    })[0];
+
+    setFinancialSummary({
+      totalFees: totalFees || Object.values(feeStructure).reduce((sum, fee) => sum + fee, 0),
+      paidAmount,
+      pendingAmount: (totalFees || Object.values(feeStructure).reduce((sum, fee) => sum + fee, 0)) - paidAmount,
+      nextPaymentDate: nextFee?.due_date ? new Date(nextFee.due_date) : new Date('2025-08-01'),
+      nextPaymentAmount: nextFee ? nextFee.amount : 5000,
+    });
+  }, [studentFees, studentPayments, feeStructure]);
+
+  // Get upcoming payments from unpaid fees
+  const getUpcomingPayments = () => {
+    return studentFees
+      .filter(fee => {
+        const paidForThisFee = studentPayments
+          .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
+          .reduce((sum, payment) => sum + payment.amount, 0);
+        return paidForThisFee < fee.amount;
+      })
+      .map(fee => {
+        const paidForThisFee = studentPayments
+          .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
+          .reduce((sum, payment) => sum + payment.amount, 0);
+        
+        return {
+          id: `up-${fee.id}`,
+          description: fee.fee_type,
+          amount: fee.amount - paidForThisFee,
+          dueDate: fee.due_date ? new Date(fee.due_date) : new Date('2025-09-15'),
+          status: 'Pending' as const
+        };
+      })
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  };
+
+  if (loading) {
+    return (
+      <div className="pb-20 md:pb-6">
+        <div className="flex items-center justify-center min-h-96">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+        </div>
+      </div>
+    );
+  }
+
+  const upcomingPayments = getUpcomingPayments();
   
   return (
     <div className="pb-20 md:pb-6">
@@ -120,11 +229,11 @@ const Finances = () => {
                 <div className="w-full bg-success-600 rounded-full h-2 mr-2">
                   <div 
                     className="bg-white h-2 rounded-full" 
-                    style={{ width: `${(financialSummary.paidAmount / financialSummary.totalFees) * 100}%` }}
+                    style={{ width: `${financialSummary.totalFees > 0 ? (financialSummary.paidAmount / financialSummary.totalFees) * 100 : 0}%` }}
                   ></div>
                 </div>
                 <span className="text-xs font-medium">
-                  {Math.round((financialSummary.paidAmount / financialSummary.totalFees) * 100)}%
+                  {financialSummary.totalFees > 0 ? Math.round((financialSummary.paidAmount / financialSummary.totalFees) * 100) : 0}%
                 </span>
               </div>
             </div>
@@ -207,33 +316,42 @@ const Finances = () => {
                   </div>
                   <div className="mt-4">
                     <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-primary-500 h-3 rounded-full" style={{ width: `${(financialSummary.paidAmount / financialSummary.totalFees) * 100}%` }}></div>
+                      <div 
+                        className="bg-primary-500 h-3 rounded-full" 
+                        style={{ width: `${financialSummary.totalFees > 0 ? (financialSummary.paidAmount / financialSummary.totalFees) * 100 : 0}%` }}
+                      ></div>
                     </div>
                   </div>
                 </div>
                 
                 <h3 className="font-medium text-gray-900 mb-2">Upcoming Payments</h3>
                 <div className="space-y-3">
-                  {upcomingPayments.map(payment => (
-                    <div key={payment.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
-                      <div>
-                        <p className="font-medium text-gray-900">{payment.description}</p>
-                        <p className="text-sm text-gray-500">
-                          Due: {payment.dueDate.toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          })}
-                        </p>
+                  {upcomingPayments.length > 0 ? (
+                    upcomingPayments.map(payment => (
+                      <div key={payment.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-gray-900">{payment.description}</p>
+                          <p className="text-sm text-gray-500">
+                            Due: {payment.dueDate.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">${payment.amount.toLocaleString()}</p>
+                          <span className="text-xs text-warning-800 bg-warning-100 px-2 py-0.5 rounded-full">
+                            {payment.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold">${payment.amount.toLocaleString()}</p>
-                        <span className="text-xs text-warning-800 bg-warning-100 px-2 py-0.5 rounded-full">
-                          {payment.status}
-                        </span>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center bg-gray-50 rounded-lg">
+                      <p className="text-gray-600">No upcoming payments at this time.</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
@@ -281,7 +399,7 @@ const Finances = () => {
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment History</h2>
             
-            {paymentHistory.length > 0 ? (
+            {studentPayments.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead>
@@ -295,14 +413,16 @@ const Finances = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paymentHistory.map((payment) => (
+                    {studentPayments.map((payment) => (
                       <tr key={payment.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{payment.description}</div>
+                          <div className="text-sm font-medium text-gray-900">
+                            {payment.description || 'Payment'}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
-                            {payment.date.toLocaleDateString('en-US', {
+                            {new Date(payment.payment_date).toLocaleDateString('en-US', {
                               year: 'numeric',
                               month: 'short',
                               day: 'numeric'
@@ -313,13 +433,18 @@ const Finances = () => {
                           <div className="text-sm font-medium">${payment.amount.toLocaleString()}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">{payment.method}</div>
+                          <div className="text-sm text-gray-500">{payment.payment_method}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="status-badge status-approved">{payment.status}</span>
+                          <span className={`status-badge ${
+                            payment.status === 'completed' ? 'status-approved' : 
+                            payment.status === 'pending' ? 'status-pending' : 'status-rejected'
+                          }`}>
+                            {payment.status || 'Unknown'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                          {payment.receiptAvailable && (
+                          {payment.receipt_url && (
                             <button className="text-primary-600 hover:text-primary-700 inline-flex items-center">
                               <Download size={16} className="mr-1" />
                               <span className="text-sm font-medium">Receipt</span>
