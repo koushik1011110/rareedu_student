@@ -1,4 +1,5 @@
 import { Bell, Menu, Search, User } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +14,9 @@ const Header = ({ toggleSidebar }: HeaderProps) => {
   const navigate = useNavigate();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  
+  // Security deposit balance (default -$100)
+  const securityDepositBalance = -100;
 
   const handleLogout = () => {
     logout();
@@ -62,6 +66,17 @@ const Header = ({ toggleSidebar }: HeaderProps) => {
         </div>
         
         <div className="flex items-center space-x-4">
+          {/* Wallet Display */}
+          <div className="flex items-center bg-gray-100 rounded-lg px-3 py-2">
+            <Wallet size={18} className="text-gray-600 mr-2" />
+            <div className="text-sm">
+              <span className="text-gray-500">Balance: </span>
+              <span className={`font-semibold ${securityDepositBalance < 0 ? 'text-error-600' : 'text-success-600'}`}>
+                ${securityDepositBalance.toLocaleString()}
+              </span>
+            </div>
+          </div>
+          
           <div className="relative">
             <button
               onClick={() => setShowNotifications(!showNotifications)}
