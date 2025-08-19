@@ -1,11 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart, FileText, CreditCard, Compass, HelpCircle, User } from 'lucide-react';
+import { BarChart, FileText, CreditCard, Compass, HelpCircle, User, Settings } from 'lucide-react';
 
 const navItems = [
   { 
     name: 'Dashboard', 
     path: '/dashboard', 
     icon: <BarChart size={20} />
+  },
+  { 
+    name: 'Services', 
+    path: '/services', 
+    icon: <Settings size={20} /> 
   },
   { 
     name: 'Documents', 

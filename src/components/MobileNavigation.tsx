@@ -1,11 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart, FileText, CreditCard, Compass, HelpCircle } from 'lucide-react';
+import { BarChart, FileText, CreditCard, Compass, HelpCircle, Settings } from 'lucide-react';
 
 const navItems = [
   { 
     name: 'Dashboard', 
     path: '/dashboard', 
     icon: <BarChart size={20} /> 
+  },
+  { 
+    name: 'Services', 
+    path: '/services', 
+    icon: <Settings size={20} /> 
   },
   { 
     name: 'Documents', 
@@ -35,6 +40,7 @@ const MobileNavigation = () => {
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
       <div className="grid grid-cols-5 h-16">
+      <div className="grid grid-cols-6 h-16">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           

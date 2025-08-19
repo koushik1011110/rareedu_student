@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import Services from "./pages/Services";
 import Documents from "./pages/Documents";
 import Finances from "./pages/Finances";
 import Visa from "./pages/Visa";
@@ -32,6 +33,10 @@ function App() {
         <Route
           path="/login"
           element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />}
+        />
+        <Route
+          path="/services"
+          element={isAuthenticated ? <Services /> : <Navigate to="/login" />}
         />
         <Route
           path="/register"
