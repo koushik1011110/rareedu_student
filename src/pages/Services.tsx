@@ -119,7 +119,7 @@ const Services = () => {
         .insert([{
           student_id: studentId,
           hostel_id: data.hostel_id,
-          status: 'pending',
+          status: 'pending' as const,
           requested_by: 'student',
           notes: data.notes || null
         }]);
