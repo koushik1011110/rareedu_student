@@ -59,7 +59,7 @@ const quickLinks = [
     color: 'bg-skyblue-100 text-skyblue-800'
   },
   {
-    title: 'View Fee Structure',
+    title: 'My Account',
     icon: <CreditCard size={18} />,
     path: '/finances',
     color: 'bg-secondary-100 text-secondary-800'
