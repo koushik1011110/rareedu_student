@@ -5,29 +5,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
 // Types for financial data
-type StudentFee = {
+type FeePayment = {
   id: number;
   student_id: number;
-  fee_type: string;
-  amount: number;
+  fee_structure_component_id: number;
+  amount_due: number;
+  amount_paid: number;
+  payment_status: string;
   due_date: string | null;
-  academic_session_id: number | null;
-  is_mandatory: boolean | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-type StudentPayment = {
-  id: number;
-  student_id: number;
-  fee_id: number | null;
-  amount: number;
-  payment_date: string;
-  payment_method: string;
-  transaction_id: string | null;
-  status: string | null;
-  description: string | null;
-  receipt_url: string | null;
+  last_payment_date: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -45,8 +31,7 @@ const Finances = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
-  const [studentFees, setStudentFees] = useState<StudentFee[]>([]);
-  const [studentPayments, setStudentPayments] = useState<StudentPayment[]>([]);
+  const [feePayments, setFeePayments] = useState<FeePayment[]>([]);
   const [financialSummary, setFinancialSummary] = useState({
     totalFees: 0,
     paidAmount: 0,
@@ -74,38 +59,17 @@ const Finances = () => {
         setLoading(true);
         const studentId = parseInt(user.id);
 
-        // Fetch student fees and payments in parallel
-        const [feesResult, paymentsResult] = await Promise.allSettled([
-          supabase
-            .from('student_fees')
-            .select('*')
-            .eq('student_id', studentId)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('student_payments')
-            .select('*')
-            .eq('student_id', studentId)
-            .order('payment_date', { ascending: false })
-        ]);
+        // Fetch fee payments data
+        const { data: feePaymentsData, error: feePaymentsError } = await supabase
+          .from('fee_payments')
+          .select('*')
+          .eq('student_id', studentId)
+          .order('created_at', { ascending: false });
 
-        // Handle fees data
-        if (feesResult.status === 'fulfilled') {
-          const { data: feesData, error: feesError } = feesResult.value;
-          if (feesError) {
-            console.error('Error fetching fees:', feesError);
-          } else {
-            setStudentFees(feesData || []);
-          }
-        }
-
-        // Handle payments data
-        if (paymentsResult.status === 'fulfilled') {
-          const { data: paymentsData, error: paymentsError } = paymentsResult.value;
-          if (paymentsError) {
-            console.error('Error fetching payments:', paymentsError);
-          } else {
-            setStudentPayments(paymentsData || []);
-          }
+        if (feePaymentsError) {
+          console.error('Error fetching fee payments:', feePaymentsError);
+        } else {
+          setFeePayments(feePaymentsData || []);
         }
 
       } catch (error) {
@@ -120,18 +84,13 @@ const Finances = () => {
 
   // Calculate financial summary
   useEffect(() => {
-    const totalFees = studentFees.reduce((sum, fee) => sum + fee.amount, 0);
-    const paidAmount = studentPayments
-      .filter(payment => payment.status === 'completed')
-      .reduce((sum, payment) => sum + payment.amount, 0);
+    const totalFees = feePayments.reduce((sum, payment) => sum + payment.amount_due, 0);
+    const paidAmount = feePayments.reduce((sum, payment) => sum + payment.amount_paid, 0);
     
     // Find next payment (earliest unpaid fee)
-    const unpaidFees = studentFees.filter(fee => {
-      const paidForThisFee = studentPayments
-        .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
-        .reduce((sum, payment) => sum + payment.amount, 0);
-      return paidForThisFee < fee.amount;
-    });
+    const unpaidFees = feePayments.filter(payment => 
+      payment.payment_status === 'pending' || payment.payment_status === 'partial'
+    );
 
     const nextFee = unpaidFees.sort((a, b) => {
       const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
@@ -144,30 +103,23 @@ const Finances = () => {
       paidAmount,
       pendingAmount: (totalFees || Object.values(feeStructure).reduce((sum, fee) => sum + fee, 0)) - paidAmount,
       nextPaymentDate: nextFee?.due_date ? new Date(nextFee.due_date) : new Date('2025-08-01'),
-      nextPaymentAmount: nextFee ? nextFee.amount : 5000,
+      nextPaymentAmount: nextFee ? (nextFee.amount_due - nextFee.amount_paid) : 5000,
     });
-  }, [studentFees, studentPayments, feeStructure]);
+  }, [feePayments, feeStructure]);
 
   // Get upcoming payments from unpaid fees
   const getUpcomingPayments = () => {
-    return studentFees
-      .filter(fee => {
-        const paidForThisFee = studentPayments
-          .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
-          .reduce((sum, payment) => sum + payment.amount, 0);
-        return paidForThisFee < fee.amount;
-      })
-      .map(fee => {
-        const paidForThisFee = studentPayments
-          .filter(payment => payment.fee_id === fee.id && payment.status === 'completed')
-          .reduce((sum, payment) => sum + payment.amount, 0);
+    return feePayments
+      .filter(payment => 
+        payment.payment_status === 'pending' || payment.payment_status === 'partial'
+      )
+      .map(payment => {
         
         return {
-          id: `up-${fee.id}`,
-          description: fee.fee_type,
-          amount: fee.amount - paidForThisFee,
-          dueDate: fee.due_date ? new Date(fee.due_date) : new Date('2025-09-15'),
-          status: 'Pending' as const
+          id: `up-${payment.id}`,
+          description: `Fee Payment #${payment.id}`,
+          status: payment.payment_status === 'pending' ? 'Pending' : 'Partial' as const,
+          dueDate: payment.due_date ? new Date(payment.due_date) : new Date('2025-09-15')
         };
       })
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
@@ -340,8 +292,11 @@ const Finances = () => {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold">${payment.amount.toLocaleString()}</p>
-                          <span className="text-xs text-warning-800 bg-warning-100 px-2 py-0.5 rounded-full">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            payment.status === 'Pending' 
+                              ? 'text-warning-800 bg-warning-100' 
+                              : 'text-primary-800 bg-primary-100'
+                          }`}>
                             {payment.status}
                           </span>
                         </div>
@@ -397,59 +352,59 @@ const Finances = () => {
         
         {activeTab === 'payment-history' && (
           <div className="card">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment History</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Fee Payment Status</h2>
             
-            {studentPayments.length > 0 ? (
+            {feePayments.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead>
                     <tr className="bg-gray-50">
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fee ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Receipt</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Payment</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {studentPayments.map((payment) => (
+                    {feePayments.map((payment) => (
                       <tr key={payment.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
-                            {payment.description || 'Payment'}
+                            Fee #{payment.id}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
-                            {new Date(payment.payment_date).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
-                            })}
+                            {payment.due_date 
+                              ? new Date(payment.due_date).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric'
+                                })
+                              : 'N/A'
+                            }
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium">${payment.amount.toLocaleString()}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">{payment.payment_method}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`status-badge ${
-                            payment.status === 'completed' ? 'status-approved' : 
-                            payment.status === 'pending' ? 'status-pending' : 'status-rejected'
+                            payment.payment_status === 'paid' ? 'status-approved' : 
+                            payment.payment_status === 'partial' ? 'status-in-progress' : 'status-pending'
                           }`}>
-                            {payment.status || 'Unknown'}
+                            {payment.payment_status === 'paid' ? 'Paid' :
+                             payment.payment_status === 'partial' ? 'Partial' : 'Unpaid'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          {payment.receipt_url && (
-                            <button className="text-primary-600 hover:text-primary-700 inline-flex items-center">
-                              <Download size={16} className="mr-1" />
-                              <span className="text-sm font-medium">Receipt</span>
-                            </button>
-                          )}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {payment.last_payment_date 
+                              ? new Date(payment.last_payment_date).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric'
+                                })
+                              : 'No payment yet'
+                            }
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -461,9 +416,9 @@ const Finances = () => {
                 <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
                   <CreditCard size={24} className="text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900">No payment history</h3>
+                <h3 className="text-lg font-medium text-gray-900">No fee payments found</h3>
                 <p className="mt-1 text-gray-500">
-                  Your payment history will appear here once you make payments.
+                  Your fee payment status will appear here once fees are assigned.
                 </p>
               </div>
             )}
