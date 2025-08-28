@@ -216,9 +216,9 @@ const Login = () => {
             </div>
             
             <div className="bg-primary-600/30 rounded-xl p-6">
-              <h3 className="font-semibold text-xl text-white">Financial Overview</h3>
+              <h3 className="font-semibold text-xl text-white">My Account</h3>
               <p className="mt-2 text-skyblue-200">
-                Track payments, view fee structure, and manage finances with ease.
+                Track payments, view fee structure, and manage your account with ease.
               </p>
             </div>
           </div>
