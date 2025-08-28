@@ -4,7 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Create a mock client if environment variables are not set
-let supabase: any;
+let supabase;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
