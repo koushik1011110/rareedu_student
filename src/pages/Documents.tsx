@@ -1,82 +1,21 @@
 import { useState } from 'react';
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Download, Search, Filter, FileText, FileCheck, FileClock } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-// Mock documents data
-const documents = [
-  {
-    id: 1,
-    name: 'Admission Letter',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2024-12-20'),
-    size: '0.8 MB',
-    category: 'admission',
-  },
-  {
-    id: 2,
-    name: 'Scholarship Offer',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2024-12-22'),
-    size: '0.5 MB',
-    category: 'financial',
-  },
-  {
-    id: 3,
-    name: 'Payment Receipt - Application Fee',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2024-12-15'),
-    size: '0.3 MB',
-    category: 'financial',
-  },
-  {
-    id: 4,
-    name: 'Visa Support Letter',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2025-01-05'),
-    size: '0.7 MB',
-    category: 'visa',
-  },
-  {
-    id: 5,
-    name: 'Accommodation Confirmation',
-    type: 'PDF',
-    status: 'Processing',
-    date: new Date('2025-01-10'),
-    size: '-',
-    category: 'accommodation',
-  },
-  {
-    id: 6,
-    name: 'Course Registration Form',
-    type: 'PDF',
-    status: 'Pending',
-    date: new Date('2025-08-15'),
-    size: '-',
-    category: 'academic',
-  },
-  {
-    id: 7,
-    name: 'Student ID Card Application',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2025-01-15'),
-    size: '0.2 MB',
-    category: 'admission',
-  },
-  {
-    id: 8,
-    name: 'Health Insurance Information',
-    type: 'PDF',
-    status: 'Ready',
-    date: new Date('2025-01-20'),
-    size: '1.2 MB',
-    category: 'health',
-  }
-];
+// Document type definition
+type Document = {
+  id: string;
+  name: string;
+  type: string;
+  status: 'Ready' | 'Processing' | 'Pending';
+  date: Date;
+  size: string;
+  category: string;
+  url?: string;
+};
 
 // Categories for filtering
 const categories = [
@@ -90,9 +29,94 @@ const categories = [
 ];
 
 const Documents = () => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [activeTab, setActiveTab] = useState('all');
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch documents from Supabase Storage
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      if (!user?.id) return;
+
+      try {
+        setLoading(true);
+        
+        // List files from admission-letters folder
+        const { data: files, error } = await supabase.storage
+          .from('documents')
+          .list('admission-letters', {
+            limit: 100,
+            offset: 0,
+          });
+
+        if (error) {
+          console.error('Error fetching documents:', error);
+          return;
+        }
+
+        // Convert storage files to document format
+        const documentList: Document[] = (files || [])
+          .filter(file => file.name !== '.emptyFolderPlaceholder') // Filter out placeholder files
+          .map((file, index) => {
+            const fileExtension = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+            const fileSizeKB = file.metadata?.size ? Math.round(file.metadata.size / 1024) : 0;
+            const fileSizeMB = fileSizeKB > 1024 ? (fileSizeKB / 1024).toFixed(1) + ' MB' : fileSizeKB + ' KB';
+            
+            return {
+              id: `doc-${index}`,
+              name: file.name.replace(/\.[^/.]+$/, ''), // Remove file extension from display name
+              type: fileExtension,
+              status: 'Ready' as const,
+              date: file.created_at ? new Date(file.created_at) : new Date(),
+              size: fileSizeKB > 0 ? fileSizeMB : 'Unknown',
+              category: 'admission',
+              url: `admission-letters/${file.name}`
+            };
+          });
+
+        setDocuments(documentList);
+      } catch (error) {
+        console.error('Error fetching documents:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDocuments();
+  }, [user?.id]);
+
+  // Handle document download
+  const handleDownload = async (document: Document) => {
+    if (!document.url) return;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .download(document.url);
+
+      if (error) {
+        console.error('Error downloading file:', error);
+        alert('Failed to download file. Please try again.');
+        return;
+      }
+
+      // Create download link
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${document.name}.${document.type.toLowerCase()}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      alert('Failed to download file. Please try again.');
+    }
+  };
 
   // Filter documents based on search, category and status
   const filteredDocuments = documents.filter(doc => {
@@ -113,6 +137,14 @@ const Documents = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
       >
+        {loading && (
+          <div className="flex items-center justify-center min-h-96">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+          </div>
+        )}
+
+        {!loading && (
+          <>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
@@ -256,6 +288,7 @@ const Documents = () => {
                             : 'btn-outline opacity-50 cursor-not-allowed'
                         }`}
                         disabled={doc.status !== 'Ready'}
+                        onClick={() => handleDownload(doc)}
                       >
                         <Download size={16} />
                         <span className="hidden sm:inline">Download</span>
@@ -277,6 +310,8 @@ const Documents = () => {
             </div>
           )}
         </div>
+          </>
+        )}
       </motion.div>
     </div>
   );
