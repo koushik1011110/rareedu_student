@@ -18,7 +18,7 @@ const navItems = [
     icon: <FileText size={20} /> 
   },
   { 
-    name: 'Finances', 
+    name: 'My Account', 
     path: '/finances', 
     icon: <CreditCard size={20} /> 
   },
