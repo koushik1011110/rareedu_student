@@ -27,25 +27,11 @@ type FeeStructure = {
   insurance: number;
 };
 
-type FeeStructureComponent = {
-  id: number;
-  fee_type_id: number;
-  // other fields omitted
-};
-
-type FeeType = {
-  id: number;
-  name: string;
-};
-
 const Finances = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
-  // Feature flag to show/hide fee structure (kept in code but can be hidden)
-  const showFeeStructure = import.meta.env.VITE_SHOW_FEE_STRUCTURE === 'true';
   const [feePayments, setFeePayments] = useState<FeePayment[]>([]);
-  const [feeTypeNameByComponent, setFeeTypeNameByComponent] = useState<Record<number, string>>({});
   const [financialSummary, setFinancialSummary] = useState({
     totalFees: 0,
     paidAmount: 0,
@@ -74,47 +60,16 @@ const Finances = () => {
         const studentId = parseInt(user.id);
 
         // Fetch fee payments data
-        const res = await supabase
+        const { data: feePaymentsData, error: feePaymentsError } = await supabase
           .from('fee_payments')
           .select('*')
           .eq('student_id', studentId)
           .order('created_at', { ascending: false });
 
-        const feePaymentsData = res.data as FeePayment[] | null;
-        const feePaymentsError = res.error;
-
         if (feePaymentsError) {
           console.error('Error fetching fee payments:', feePaymentsError);
         } else {
-          const payments = feePaymentsData || [];
-          setFeePayments(payments);
-
-          // Fetch related fee structure components and fee types to show readable names
-          try {
-            const compsRes = await supabase.from('fee_structure_components').select('*');
-            const comps = compsRes.data as FeeStructureComponent[] | null;
-
-            const typesRes = await supabase.from('fee_types').select('*');
-            const types = typesRes.data as FeeType[] | null;
-
-            const typeMap: Record<number, string> = {};
-            if (comps && types) {
-              const typesById = (types || []).reduce((acc, t) => {
-                acc[t.id] = t.name;
-                return acc;
-              }, {} as Record<number, string>);
-
-              (comps || []).forEach(c => {
-                const typeName = typesById[c.fee_type_id];
-                if (typeName) typeMap[c.id] = typeName;
-              });
-            }
-
-            setFeeTypeNameByComponent(typeMap);
-          } catch (e) {
-            // non-fatal: leave mapping empty so UI falls back to ID
-            console.error('Error fetching fee types/components:', e);
-          }
+          setFeePayments(feePaymentsData || []);
         }
 
       } catch (error) {
@@ -159,24 +114,16 @@ const Finances = () => {
         payment.payment_status === 'pending' || payment.payment_status === 'partial'
       )
       .map(payment => {
-        const componentName = feeTypeNameByComponent[payment.fee_structure_component_id];
-
+        
         return {
           id: `up-${payment.id}`,
-          description: componentName ? componentName : `Fee Payment #${payment.id}`,
+          description: `Fee Payment #${payment.id}`,
           status: payment.payment_status === 'pending' ? 'Pending' : 'Partial' as const,
           dueDate: payment.due_date ? new Date(payment.due_date) : new Date('2025-09-15')
         };
       })
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   };
-
-  // If fee structure is hidden, ensure the active tab isn't set to it
-  useEffect(() => {
-    if (!showFeeStructure && activeTab === 'fee-structure') {
-      setActiveTab('overview');
-    }
-  }, [showFeeStructure, activeTab]);
 
   if (loading) {
     return (
@@ -199,8 +146,8 @@ const Finances = () => {
       >
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Account</h1>
-            <p className="text-gray-600">Manage your payments and account details</p>
+            <h1 className="text-2xl font-bold text-gray-900">Financial Management</h1>
+            <p className="text-gray-600">Manage your payments and view fee structure</p>
           </div>
         </div>
         
@@ -265,7 +212,7 @@ const Finances = () => {
         </div>
         
         {/* Tabs */}
-  <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
+        <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
           <button
             onClick={() => setActiveTab('overview')}
             className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
@@ -286,18 +233,16 @@ const Finances = () => {
           >
             Fee Payment Status
           </button>
-          {showFeeStructure && (
-            <button
-              onClick={() => setActiveTab('fee-structure')}
-              className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'fee-structure'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Fee Structure
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('fee-structure')}
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'fee-structure'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Fee Structure
+          </button>
         </div>
         
         {/* Tab content */}
@@ -425,9 +370,7 @@ const Finances = () => {
                       <tr key={payment.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
-                            {feeTypeNameByComponent[payment.fee_structure_component_id]
-                              ? feeTypeNameByComponent[payment.fee_structure_component_id]
-                              : `Fee #${payment.id}`}
+                            Fee #{payment.id}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -482,7 +425,7 @@ const Finances = () => {
           </div>
         )}
         
-  {showFeeStructure && activeTab === 'fee-structure' && (
+        {activeTab === 'fee-structure' && (
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Fee Structure</h2>
             

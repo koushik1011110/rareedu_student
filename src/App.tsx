@@ -34,7 +34,10 @@ function App() {
           path="/login"
           element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />}
         />
-        
+        <Route
+          path="/services"
+          element={isAuthenticated ? <Services /> : <Navigate to="/login" />}
+        />
         <Route
           path="/register"
           element={
@@ -46,10 +49,6 @@ function App() {
           <Route
             path="/dashboard"
             element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />}
-          />
-          <Route
-            path="/services"
-            element={isAuthenticated ? <Services /> : <Navigate to="/login" />}
           />
           <Route
             path="/documents"

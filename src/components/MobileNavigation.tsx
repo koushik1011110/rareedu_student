@@ -25,7 +25,7 @@ const MobileNavigation: React.FC<MobileNavigationProps> = ({ isOpen, onToggle })
     { name: 'Services', href: '/services', icon: Settings },
     { name: 'Profile', href: '/profile', icon: User },
     { name: 'Documents', href: '/documents', icon: FileText },
-  { name: 'My Account', href: '/finances', icon: CreditCard },
+    { name: 'Finances', href: '/finances', icon: CreditCard },
     { name: 'Visa', href: '/visa', icon: Plane },
     { name: 'Support', href: '/support', icon: HelpCircle },
   ];
